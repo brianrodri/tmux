@@ -1,6 +1,6 @@
 # configure.ac
 
-AC_INIT([tmux], 3.0-rc5)
+AC_INIT([tmux], next-3.3)
 AC_PREREQ([2.60])
 
 AC_CONFIG_AUX_DIR(etc)
@@ -87,6 +87,12 @@ AC_CHECK_HEADERS([ \
 	util.h \
 ])
 
+# Look for sys_signame.
+AC_SEARCH_LIBS(sys_signame, , AC_DEFINE(HAVE_SYS_SIGNAME))
+
+# Look for fmod.
+AC_CHECK_LIB(m, fmod)
+
 # Look for library needed for flock.
 AC_SEARCH_LIBS(flock, bsd)
 
@@ -107,6 +113,8 @@ AC_REPLACE_FUNCS([ \
 	fgetln \
 	freezero \
 	getdtablecount \
+	getdtablesize \
+	getline \
 	getprogname \
 	memmem \
 	recallocarray \
@@ -124,6 +132,12 @@ AC_FUNC_STRNLEN
 
 # Look for clock_gettime. Must come before event_init.
 AC_SEARCH_LIBS(clock_gettime, rt)
+
+# Always use our getopt because 1) glibc's doesn't enforce argument order 2)
+# musl does not set optarg to NULL for flags without arguments (although it is
+# not required to, but it is helpful) 3) there are probably other weird
+# implementations.
+AC_LIBOBJ(getopt)
 
 # Look for libevent.
 PKG_CHECK_MODULES(
@@ -315,8 +329,34 @@ AC_SEARCH_LIBS(inet_ntoa, nsl)
 AC_SEARCH_LIBS(socket, socket)
 AC_CHECK_LIB(xnet, socket)
 
-# Check for CMSG_DATA. Some platforms require _XOPEN_SOURCE_EXTENDED (for
-# example see xopen_networking(7) on HP-UX).
+# Check if using glibc and have malloc_trim(3). The glibc free(3) is pretty bad
+# about returning memory to the kernel unless the application tells it when to
+# with malloc_trim(3).
+AC_MSG_CHECKING(if free doesn't work very well)
+AC_LINK_IFELSE([AC_LANG_SOURCE(
+	[
+		#include <stdlib.h>
+		#ifdef __GLIBC__
+		#include <malloc.h>
+		int main(void) {
+			malloc_trim (0);
+			exit(0);
+		}
+		#else
+		no
+		#endif
+	])],
+	found_malloc_trim=yes,
+	found_malloc_trim=no
+)
+AC_MSG_RESULT($found_malloc_trim)
+if test "x$found_malloc_trim" = xyes; then
+	AC_DEFINE(HAVE_MALLOC_TRIM)
+fi
+
+# Check for CMSG_DATA. On some platforms like HP-UX this requires UNIX 95
+# (_XOPEN_SOURCE and _XOPEN_SOURCE_EXTENDED) (see xopen_networking(7)). On
+# others, UNIX 03 (_XOPEN_SOURCE 600, see standards(7) on Solaris).
 XOPEN_DEFINES=
 AC_MSG_CHECKING(for CMSG_DATA)
 AC_EGREP_CPP(
@@ -349,6 +389,25 @@ if test "x$found_cmsg_data" = xno; then
 	AC_MSG_RESULT($found_cmsg_data)
 	if test "x$found_cmsg_data" = xyes; then
 		XOPEN_DEFINES="-D_XOPEN_SOURCE -D_XOPEN_SOURCE_EXTENDED"
+	fi
+fi
+if test "x$found_cmsg_data" = xno; then
+	AC_MSG_CHECKING(if CMSG_DATA needs _XOPEN_SOURCE 600)
+	AC_EGREP_CPP(
+		yes,
+		[
+			#define _XOPEN_SOURCE 600
+			#include <sys/socket.h>
+			#ifdef CMSG_DATA
+			yes
+			#endif
+		],
+		found_cmsg_data=yes,
+		found_cmsg_data=no
+	)
+	AC_MSG_RESULT($found_cmsg_data)
+	if test "x$found_cmsg_data" = xyes; then
+		XOPEN_DEFINES="-D_XOPEN_SOURCE=600"
 	else
 		AC_MSG_ERROR("CMSG_DATA not found")
 	fi
@@ -422,40 +481,6 @@ if test "x$found_stravis" = xyes; then
 else
 	AC_LIBOBJ(vis)
 	AC_LIBOBJ(unvis)
-fi
-
-# Look for getopt. glibc's getopt does not enforce argument order and the ways
-# of making it do so are stupid, so just use our own instead.
-AC_CHECK_FUNC(getopt, found_getopt=yes, found_getopt=no)
-if test "x$found_getopt" != xno; then
-	AC_MSG_CHECKING(if getopt is suitable)
-	AC_EGREP_CPP(
-		yes,
-		[
-			#include <features.h>
-			#ifdef __GLIBC__
-			yes
-			#endif
-		],
-		[
-			found_getopt=no
-			AC_MSG_RESULT(no)
-		],
-		AC_MSG_RESULT(yes))
-fi
-if test "x$found_getopt" != xno; then
-	AC_CHECK_DECLS(
-		[optarg, optind, optreset],
-		,
-		found_getopt=no,
-		[
-			#include <unistd.h>
-		])
-fi
-if test "x$found_getopt" != xno; then
-	AC_DEFINE(HAVE_GETOPT)
-else
-	AC_LIBOBJ(getopt)
 fi
 
 # Look for fdforkpty and forkpty in libutil.
@@ -570,6 +595,12 @@ case "$host_os" in
 	*darwin*)
 		AC_MSG_RESULT(darwin)
 		PLATFORM=darwin
+		#
+		# OS X uses __dead2 instead of __dead, like FreeBSD. But it
+		# defines __dead away so it needs to be removed before we can
+		# replace it.
+		#
+		AC_DEFINE(BROKEN___DEAD)
 		#
 		# OS X CMSG_FIRSTHDR is broken, so redefine it with a working
 		# one. daemon works but has some stupid side effects, so use

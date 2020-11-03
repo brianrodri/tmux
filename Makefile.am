@@ -6,11 +6,14 @@ CLEANFILES = tmux.1.mdoc tmux.1.man cmd-parse.c
 
 # Distribution tarball options.
 EXTRA_DIST = \
-	CHANGES README README.ja COPYING example_tmux.conf compat/*.[ch] \
+	CHANGES README README.ja COPYING example_tmux.conf \
 	osdep-*.c mdoc2man.awk tmux.1
+dist_EXTRA_tmux_SOURCES = compat/*.[ch]
 
 # Preprocessor flags.
-AM_CPPFLAGS += @XOPEN_DEFINES@ -DTMUX_CONF="\"$(sysconfdir)/tmux.conf\""
+AM_CPPFLAGS += @XOPEN_DEFINES@ \
+	-DTMUX_VERSION='"@VERSION@"' \
+	-DTMUX_CONF='"$(sysconfdir)/tmux.conf:~/.tmux.conf:$$XDG_CONFIG_HOME/tmux/tmux.conf:~/.config/tmux/tmux.conf"'
 
 # Additional object files.
 LDADD = $(LIBOBJS)
@@ -130,6 +133,7 @@ dist_tmux_SOURCES = \
 	control-notify.c \
 	control.c \
 	environ.c \
+	file.c \
 	format.c \
 	format-draw.c \
 	grid-view.c \
@@ -150,6 +154,7 @@ dist_tmux_SOURCES = \
 	options-table.c \
 	options.c \
 	paste.c \
+	popup.c \
 	proc.c \
 	regsub.c \
 	resize.c \
@@ -166,6 +171,7 @@ dist_tmux_SOURCES = \
 	tmux.c \
 	tmux.h \
 	tty-acs.c \
+	tty-features.c \
 	tty-keys.c \
 	tty-term.c \
 	tty.c \
@@ -174,11 +180,11 @@ dist_tmux_SOURCES = \
 	window-client.c \
 	window-clock.c \
 	window-copy.c \
+	window-customize.c \
 	window-tree.c \
 	window.c \
 	xmalloc.c \
-	xmalloc.h \
-	xterm-keys.c
+	xmalloc.h
 nodist_tmux_SOURCES = osdep-@PLATFORM@.c
 
 # Add compat file for forkpty.

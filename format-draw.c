@@ -142,7 +142,8 @@ format_draw_put_list(struct screen_write_ctx *octx,
 		width -= list_left->cx;
 	}
 	if (start + width < list->cx && width > list_right->cx) {
-		screen_write_cursormove(octx, ocx + offset + width - 1, ocy, 0);
+		screen_write_cursormove(octx, ocx + offset + width -
+		    list_right->cx, ocy, 0);
 		screen_write_fast_copy(octx, list_right, 0, 0, list_right->cx,
 		    1);
 		width -= list_right->cx;
@@ -241,7 +242,7 @@ format_draw_left(struct screen_write_ctx *octx, u_int available, u_int ocx,
 
 	/* If there is no list left, pass off to the no list function. */
 	if (width_list == 0) {
-		screen_write_start(&ctx, NULL, left);
+		screen_write_start(&ctx, left);
 		screen_write_fast_copy(&ctx, after, 0, 0, width_after, 1);
 		screen_write_stop(&ctx);
 
@@ -333,7 +334,7 @@ format_draw_centre(struct screen_write_ctx *octx, u_int available, u_int ocx,
 
 	/* If there is no list left, pass off to the no list function. */
 	if (width_list == 0) {
-		screen_write_start(&ctx, NULL, centre);
+		screen_write_start(&ctx, centre);
 		screen_write_fast_copy(&ctx, after, 0, 0, width_after, 1);
 		screen_write_stop(&ctx);
 
@@ -430,7 +431,7 @@ format_draw_right(struct screen_write_ctx *octx, u_int available, u_int ocx,
 
 	/* If there is no list left, pass off to the no list function. */
 	if (width_list == 0) {
-		screen_write_start(&ctx, NULL, right);
+		screen_write_start(&ctx, right);
 		screen_write_fast_copy(&ctx, after, 0, 0, width_after, 1);
 		screen_write_stop(&ctx);
 
@@ -513,8 +514,8 @@ format_draw(struct screen_write_ctx *octx, const struct grid_cell *base,
 	int			 focus_start = -1, focus_end = -1;
 	int			 list_state = -1, fill = -1;
 	enum style_align	 list_align = STYLE_ALIGN_DEFAULT;
-	struct grid_cell	 gc;
-	struct style		 sy;
+	struct grid_cell	 gc, current_default;
+	struct style		 sy, saved_sy;
 	struct utf8_data	*ud = &sy.gc.data;
 	const char		*cp, *end;
 	enum utf8_state		 more;
@@ -523,7 +524,8 @@ format_draw(struct screen_write_ctx *octx, const struct grid_cell *base,
 	struct format_ranges	 frs;
 	struct style_range	*sr;
 
-	style_set(&sy, base);
+	memcpy(&current_default, base, sizeof current_default);
+	style_set(&sy, &current_default);
 	TAILQ_INIT(&frs);
 	log_debug("%s: %s", __func__, expanded);
 
@@ -534,8 +536,8 @@ format_draw(struct screen_write_ctx *octx, const struct grid_cell *base,
 	 */
 	for (i = 0; i < TOTAL; i++) {
 		screen_init(&s[i], size, 1, 0);
-		screen_write_start(&ctx[i], NULL, &s[i]);
-		screen_write_clearendofline(&ctx[i], base->bg);
+		screen_write_start(&ctx[i], &s[i]);
+		screen_write_clearendofline(&ctx[i], current_default.bg);
 		width[i] = 0;
 	}
 
@@ -545,7 +547,7 @@ format_draw(struct screen_write_ctx *octx, const struct grid_cell *base,
 	 */
 	cp = expanded;
 	while (*cp != '\0') {
-		if (cp[0] != '#' || cp[1] != '[') {
+		if (cp[0] != '#' || cp[1] != '[' || sy.ignore) {
 			/* See if this is a UTF-8 character. */
 			if ((more = utf8_open(ud, *cp)) == UTF8_MORE) {
 				while (*++cp != '\0' && more == UTF8_MORE)
@@ -581,7 +583,8 @@ format_draw(struct screen_write_ctx *octx, const struct grid_cell *base,
 			goto out;
 		}
 		tmp = xstrndup(cp + 2, end - (cp + 2));
-		if (style_parse(&sy, base, tmp) != 0) {
+		style_copy(&saved_sy, &sy);
+		if (style_parse(&sy, &current_default, tmp) != 0) {
 			log_debug("%s: invalid style '%s'", __func__, tmp);
 			free(tmp);
 			cp = end + 1;
@@ -594,6 +597,16 @@ format_draw(struct screen_write_ctx *octx, const struct grid_cell *base,
 		/* If this style has a fill colour, store it for later. */
 		if (sy.fill != 8)
 			fill = sy.fill;
+
+		/* If this style pushed or popped the default, update it. */
+		if (sy.default_type == STYLE_DEFAULT_PUSH) {
+			memcpy(&current_default, &saved_sy.gc,
+			    sizeof current_default);
+			sy.default_type = STYLE_DEFAULT_BASE;
+		} else if (sy.default_type == STYLE_DEFAULT_POP) {
+			memcpy(&current_default, base, sizeof current_default);
+			sy.default_type = STYLE_DEFAULT_BASE;
+		}
 
 		/* Check the list state. */
 		switch (sy.list) {
@@ -726,7 +739,7 @@ format_draw(struct screen_write_ctx *octx, const struct grid_cell *base,
 
 	/*
 	 * Draw the screens. How they are arranged depends on where the list
-	 * appearsq.
+	 * appears.
 	 */
 	switch (list_align) {
 	case STYLE_ALIGN_DEFAULT:
@@ -792,7 +805,7 @@ format_width(const char *expanded)
 		if (cp[0] == '#' && cp[1] == '[') {
 			end = format_skip(cp + 2, "]");
 			if (end == NULL)
-				return 0;
+				return (0);
 			cp = end + 1;
 		} else if ((more = utf8_open(&ud, *cp)) == UTF8_MORE) {
 			while (*++cp != '\0' && more == UTF8_MORE)
@@ -838,8 +851,10 @@ format_trim_left(const char *expanded, u_int limit)
 					out += ud.size;
 				}
 				width += ud.width;
-			} else
+			} else {
 				cp -= ud.have;
+				cp++;
+			}
 		} else if (*cp > 0x1f && *cp < 0x7f) {
 			if (width + 1 <= limit)
 				*out++ = *cp;
@@ -885,8 +900,10 @@ format_trim_right(const char *expanded, u_int limit)
 					out += ud.size;
 				}
 				width += ud.width;
-			} else
+			} else {
 				cp -= ud.have;
+				cp++;
+			}
 		} else if (*cp > 0x1f && *cp < 0x7f) {
 			if (width >= skip)
 				*out++ = *cp;
