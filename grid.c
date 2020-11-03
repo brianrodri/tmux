@@ -37,7 +37,7 @@
 
 /* Default grid cell data. */
 const struct grid_cell grid_default_cell = {
-	{ { ' ' }, 0, 1, 1 }, 0, 0, 8, 8, 0
+	{ { ' ' }, 0, 1, 1 }, 0, 0, 8, 8, 0, 0
 };
 
 /*
@@ -45,12 +45,12 @@ const struct grid_cell grid_default_cell = {
  * appears in the grid - because of this, they are always extended cells.
  */
 static const struct grid_cell grid_padding_cell = {
-	{ { '!' }, 0, 0, 0 }, 0, GRID_FLAG_PADDING, 8, 8, 0
+	{ { '!' }, 0, 0, 0 }, 0, GRID_FLAG_PADDING, 8, 8, 0, 0
 };
 
 /* Cleared grid cell data. */
 static const struct grid_cell grid_cleared_cell = {
-	{ { ' ' }, 0, 1, 1 }, 0, GRID_FLAG_CLEARED, 8, 8, 0
+	{ { ' ' }, 0, 1, 1 }, 0, GRID_FLAG_CLEARED, 8, 8, 0, 0
 };
 static const struct grid_cell_entry grid_cleared_entry = {
 	GRID_FLAG_CLEARED, { .data = { 0, 8, 8, ' ' } }

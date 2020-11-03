@@ -677,6 +677,7 @@ struct grid_cell {
 	int			fg;
 	int			bg;
 	int			us;
+	u_int			link;
 };
 
 /* Grid extended cell entry. */
@@ -687,7 +688,6 @@ struct grid_extd_entry {
 	int			fg;
 	int			bg;
 	int			us;
-	u_int			link;
 } __packed;
 
 /* Grid cell entry. */
