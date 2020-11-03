@@ -2288,6 +2288,7 @@ input_exit_osc(struct input_ctx *ictx)
 				server_status_window(wp->window);
 			}
 		}
+		break;
 	case 8:
 		input_osc_8(ictx, p);
 		break;

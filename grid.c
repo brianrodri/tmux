@@ -37,7 +37,7 @@
 
 /* Default grid cell data. */
 const struct grid_cell grid_default_cell = {
-	{ { ' ' }, 0, 1, 1 }, 0, 0, 8, 8, 0, 0
+	{ { ' ' }, 0, 1, 1 }, 0, 0, 8, 8, 0
 };
 
 /*
